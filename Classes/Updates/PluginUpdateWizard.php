@@ -6,21 +6,16 @@
  * For the full copyright and license information, please read the
  * LICENSE.txt file that was distributed with this source code.
  *
- * Jens Neumann <info@freshworkx.de>
+ * Florian Wessels <f.wessels@Leuchtfeuer.com>, Leuchtfeuer Digital Marketing
  */
 
-namespace Freshworkx\BmImageGallery\Updates;
+namespace Leuchtfeuer\BmImageGallery\Updates;
 
-use Doctrine\DBAL\Exception;
-use TYPO3\CMS\Core\Database\Connection;
-use Symfony\Component\Console\Output\OutputInterface;
 use TYPO3\CMS\Core\Configuration\FlexForm\FlexFormTools;
 use TYPO3\CMS\Core\Database\ConnectionPool;
 use TYPO3\CMS\Core\Utility\GeneralUtility;
-use TYPO3\CMS\Install\Attribute\UpgradeWizard;
 use TYPO3\CMS\Install\Updates\UpgradeWizardInterface;
 
-#[UpgradeWizard('bmImageGallery_plugin')]
 class PluginUpdateWizard implements UpgradeWizardInterface
 {
     private const SOURCE_LIST_TYPE = 'bmimagegallery_list';
@@ -31,25 +26,43 @@ class PluginUpdateWizard implements UpgradeWizardInterface
         'List->selectedGallery' => 'bmimagegallery_selectedgallery',
     ];
 
-    protected OutputInterface $output;
-
-    public function setOutput(OutputInterface $output): void
+    /**
+     * Return the identifier for this wizard
+     * This should be the same string as used in the ext_localconf class registration
+     *
+     * @return string
+     */
+    public function getIdentifier(): string
     {
-        $this->output = $output;
+        return self::class;
     }
 
+    /**
+     * Return the speaking name of this wizard
+     *
+     * @return string
+     */
     public function getTitle(): string
     {
         return 'TYPO3 Image Gallery: Split plugins';
     }
 
+    /**
+     * Return the description for this wizard
+     *
+     * @return string
+     */
     public function getDescription(): string
     {
-        return 'Updates existing gallery plugins, transforms their flexform structure and unwind their switchable controller actions.'; // phpcs:ignore
+        return 'Updates existing gallery plugins, transforms their flexform structure and unwind their switchable controller actions.';
     }
 
     /**
-     * @throws Exception
+     * Execute the update
+     *
+     * Called when a wizard reports that an update is necessary
+     *
+     * @return bool
      */
     public function executeUpdate(): bool
     {
@@ -65,22 +78,22 @@ class PluginUpdateWizard implements UpgradeWizardInterface
             $queryBuilder = $connectionPool->getQueryBuilderForTable('tt_content');
             $queryBuilder
                 ->update('tt_content')
-                ->set('pi_flexform', $flexForm)
+                ->set('pi_flexform', $flexForm ?? '')
                 ->set('list_type', $listType)
-                ->where($queryBuilder->expr()->eq(
-                    'uid',
-                    $queryBuilder->createNamedParameter($plugin['uid'], Connection::PARAM_INT)
-                ))
-                ->executeStatement();
-
-            $this->output->writeln('Updated plugin with UID ' . $plugin['uid']);
+                ->where($queryBuilder->expr()->eq('uid', $queryBuilder->createNamedParameter($plugin['uid'], \PDO::PARAM_INT)))
+                ->execute();
         }
 
         return true;
     }
 
     /**
-     * @throws Exception
+     * Is an update necessary?
+     *
+     * Is used to determine whether a wizard needs to be run.
+     * Check if data for migration exists.
+     *
+     * @return bool
      */
     public function updateNecessary(): bool
     {
@@ -88,6 +101,11 @@ class PluginUpdateWizard implements UpgradeWizardInterface
     }
 
     /**
+     * Returns an array of class names of prerequisite classes
+     *
+     * This way a wizard can define dependencies like "database up-to-date" or
+     * "reference index updated"
+     *
      * @return string[]
      */
     public function getPrerequisites(): array
@@ -95,37 +113,25 @@ class PluginUpdateWizard implements UpgradeWizardInterface
         return [];
     }
 
-    /**
-     * @return list<array<string,mixed>>
-     * @throws Exception
-     */
     protected function getPlugins(): array
     {
         return GeneralUtility::makeInstance(ConnectionPool::class)
             ->getQueryBuilderForTable('tt_content')
             ->select('*')
             ->from('tt_content')
-            ->where(sprintf('list_type = "%s"', self::SOURCE_LIST_TYPE))
-            ->executeQuery()
-            ->fetchAllAssociative();
+            ->where(sprintf('list_type = "%s"', static::SOURCE_LIST_TYPE))
+            ->execute()
+            ->fetchAll();
     }
 
-    /**
-     * @param array<string, mixed> $flexForm
-     * @return string
-     */
     protected function getTargetListType(array $flexForm): string
     {
         $controllerAction = $flexForm['data']['sDEF']['lDEF']['switchableControllerActions']['vDEF'];
-        $controllerAction = htmlspecialchars_decode((string) $controllerAction);
+        $controllerAction = htmlspecialchars_decode($controllerAction);
 
-        return self::TARGET_LIST_TYPES[$controllerAction];
+        return static::TARGET_LIST_TYPES[$controllerAction];
     }
 
-    /**
-     * @param array<string, mixed> $flexForm
-     * @return array<string, mixed>
-     */
     protected function transformFlexFormStructure(array $flexForm, string $listType): array
     {
         switch ($listType) {
@@ -134,16 +140,16 @@ class PluginUpdateWizard implements UpgradeWizardInterface
 
                 $sDEFSettings = [
                     'settings.collections' => [
-                        'vDEF' => $flexForm['data']['sDEF']['lDEF']['settings.collections']['vDEF'],
+                        'vDEF' => $flexForm['data']['sDEF']['lDEF']['settings.collections']['vDEF']
                     ],
                     'settings.mode' => [
-                        'vDEF' => $mode,
+                        'vDEF' => $mode
                     ],
                 ];
 
                 if ($mode == 1) {
                     $sDEFSettings['settings.galleryPage'] = [
-                        'vDEF' => $flexForm['data']['sDEF']['lDEF']['settings.galleryPage']['vDEF'],
+                        'vDEF' => $flexForm['data']['sDEF']['lDEF']['settings.galleryPage']['vDEF']
                     ];
                 }
 
@@ -152,8 +158,8 @@ class PluginUpdateWizard implements UpgradeWizardInterface
             case 'bmimagegallery_selectedgallery':
                 $sDEFSettings = [
                     'settings.collection' => [
-                        'vDEF' => $flexForm['data']['sDEF']['lDEF']['settings.collection']['vDEF'],
-                    ],
+                        'vDEF' => $flexForm['data']['sDEF']['lDEF']['settings.collection']['vDEF']
+                    ]
                 ];
                 break;
         }
@@ -169,14 +175,14 @@ class PluginUpdateWizard implements UpgradeWizardInterface
         if (($mode ?? null) != 1) {
             $data['data']['list']['lDEF'] = [
                 'settings.maxItems' => [
-                    'vDEF' => $flexForm['data']['sDEF']['list']['settings.maxItems']['vDEF'] ?? 0,
+                    'vDEF' => $flexForm['data']['sDEF']['list']['settings.maxItems']['vDEF'] ?? 0
                 ],
                 'settings.orderBy' => [
-                    'vDEF' => $flexForm['data']['sDEF']['list']['settings.orderBy']['vDEF'],
+                    'vDEF' => $flexForm['data']['sDEF']['list']['settings.orderBy']['vDEF'] ?? ''
                 ],
                 'settings.sortingOrder' => [
-                    'vDEF' => $flexForm['data']['sDEF']['list']['settings.sortingOrder']['vDEF'],
-                ],
+                    'vDEF' => $flexForm['data']['sDEF']['list']['settings.sortingOrder']['vDEF'] ?? ''
+                ]
             ];
         }
 
